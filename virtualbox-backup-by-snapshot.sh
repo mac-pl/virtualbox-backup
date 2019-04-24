@@ -1,8 +1,9 @@
 #!/bin/bash
 
 VBOXMANAGE="/usr/bin/vboxmanage"
-BACKUPFOLDER="/mnt/backup/"
+BACKUPFOLDER="/home/backup/local"
 snapname="";
+destFolder="";
 
 function getVmList {
 
@@ -26,14 +27,41 @@ function cloneMachineSnapshot
 {
 machine=$1;
 destFolder=$BACKUPFOLDER"/"$machine"/"$snapname;
+chmod -R 700 $BACKUPFOLDER;
 if [ ! -d $destFolder ];
 then
     mkdir -p $destFolder;
 fi;
-$VBOXMANAGE clonevm $machine --snapshot $snapname --basefolder=$destFolder
+$VBOXMANAGE clonevm $machine --snapshot $snapname --basefolder="$destFolder"
 }
 
 
+
+function copyMachineFiles
+{
+machine=$1;
+entriesCount=`cat /tmp/.vm.hdfiles | wc -l`
+i=0;
+curdate=`date '+%Y-%m-%d_%H%M%S'`
+echo "[$machine] [$curdate] Backup [$entriesCount] machine files...";
+DATA=`date '+%Y-%m-%d_%H%M'`
+while read fileline; do
+    let i=i+1;
+    machinefile=`echo $fileline  | awk 'BEGIN {FS="="}{print $2}' | sed 's#\"##g'`
+    machinefilesize=`ls -lh "$machinefile" | awk '{print $5}'`
+    destFileName=`echo ${machinefile##*/}`
+
+    curdate=`date '+%Y-%m-%d_%H%M%S'`
+    echo "[$machine] [$curdate] Backup [$i/$entriesCount] files:  [$machinefile] [$machinefilesize]";
+
+    cp "$machinefile" "$destFolder";
+
+    curdate=`date '+%Y-%m-%d_%H%M%S'`
+    echo "[$machine] [$curdate] Copied to: $destFolder";
+
+done < /tmp/.vm.hdfiles
+
+}
 function backupMachineFiles
 {
 machine=$1;
@@ -43,39 +71,19 @@ echo "[$machine] [$curdate] Searching hd files...";
 if [ -f /tmp/.vm.hdfiles ]; then
 rm /tmp/.vm.hdfiles
 fi;
-vboxmanage showvminfo $machine --machinereadable | grep "vdi\|CfgFile" > /tmp/.vm.hdfiles
+$VBOXMANAGE showvminfo $machine --machinereadable | grep "vdi\|CfgFile" > /tmp/.vm.hdfiles
 
 copyMachineFiles $machine
 }
 
-function copyMachineFiles
+
+function backupMachine
 {
-entriesCount=`cat /tmp/.vm.hdfiles | wc -l`
-i=0;
-curdate=`date '+%Y-%m-%d_%H%M%S'`
-echo "[$1] [$curdate] Backup [$ile] machine files...";
-DATA=`date '+%Y-%m-%d_%H%M'`
-folder="$1_$DATA";
-while read fileline; do
-    let i=i+1;
-    machinefile=`echo $fileline  | awk 'BEGIN {FS="="}{print $2}' | sed 's#\"##g'`
-    machinefilesize=`ls -lh "$machinefile" | awk '{print $5}'`
-    destFileName=`echo ${machinefile##*/}`
-    if [ ! -d $BACKUPFOLDER/$folder ];
-    then
-        mkdir -p $BACKUPFOLDER/$folder
-    fi;
-
-    curdate=`date '+%Y-%m-%d_%H%M%S'`
-    echo "[$1] [$curdate] Backup [$i/$entriesCount] files:  [$machinefile] [$machinefilesize]";
-
-    cp "$machinefile" "$BACKUPFOLDER/$folder/$destFileName";
-
-    curdate=`date '+%Y-%m-%d_%H%M%S'`
-    echo "[$machine] [$curdate] Copied to: $BACKUPFOLDER/$folder/$destFileName";
-
-done < /tmp/.vm.hdfiles
-
+machine=$1;
+doMachineSnapshot $machine
+cloneMachineSnapshot $machine
+backupMachineFiles $machine
+echo "Done backup: [$machine]";
 }
 
 function doMachineBackup
@@ -97,15 +105,6 @@ function iterateMachines
 while read machine; do
     doMachineBackup $machine
 done < /tmp/vm.list
-}
-
-function backupMachine
-{
-machine=$1;
-doMachineSnapshot $machine
-cloneMachineSnapshot $machine
-backupMachineFiles $machine
-echo "Done backup: [$machine]";
 }
 
 
